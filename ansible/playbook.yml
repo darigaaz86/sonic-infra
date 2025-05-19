@@ -1,0 +1,228 @@
+---
+- name: Setup Sonic validator and RPC nodes
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    sonic_repo: "https://github.com/darigaaz86/sonic-fork-run.git"
+    sonic_dir: "/data/sonic"
+    go_version: "1.22.3"
+    # node_role: "{{ hostvars[inventory_hostname]['tags']['Role'] | default('validator') }}"
+    validator_id: "{{ inventory_hostname.split('-')[-1] }}"
+    validator_data_dir: "/data/v{{ inventory_hostname.split('-')[-1] }}"
+    # data_dir: "{{ sonic_dir }}/data/{{ 'v' ~ validator_id if node_role == 'validator' else 'sonic' }}"
+
+  tasks:
+    - name: Set node_role based on inventory group
+      set_fact:
+        node_role: >-
+          {{
+            (
+              'validator' if inventory_hostname in groups['validators'] else
+              'rpc' if inventory_hostname in groups['rpcs'] else
+              'bootnode' if inventory_hostname in groups['bootnode'] else
+              'validator'
+            ) | trim
+          }}
+
+    - name: Set data_dir based on node_role
+      set_fact:
+        data_dir: "{{ sonic_dir }}/data/{{ 'v' ~ validator_id if node_role == 'validator' else 'sonic' }}"
+
+    - name: Debug node role and data_dir
+      debug:
+        msg: "node_role={{ node_role }}, data_dir={{ data_dir }}"
+
+    - name: Install dependencies
+      package:
+        name:
+          - git
+          - wget
+          - gcc
+          - make
+          - unzip
+          - jq
+        state: present
+        update_cache: yes
+
+    - name: Mount NVMe volume
+      block:
+        - name: Create filesystem on NVMe volume if needed
+          filesystem:
+            fstype: ext4
+            dev: /dev/nvme1n1
+          when: ansible_devices['nvme1n1'] is defined
+
+        - name: Create mount point directory
+          file:
+            path: /data
+            state: directory
+            mode: '0755'
+
+        - name: Mount the NVMe volume
+          mount:
+            path: /data
+            src: /dev/nvme1n1
+            fstype: ext4
+            state: mounted
+
+        - name: Add fstab entry for NVMe volume
+          mount:
+            path: /data
+            src: /dev/nvme1n1
+            fstype: ext4
+            opts: defaults,nofail
+            state: present
+
+    - name: Install Go
+      shell: |
+        wget https://go.dev/dl/go{{ go_version }}.linux-amd64.tar.gz -O /tmp/go.tar.gz
+        sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tar.gz
+        echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile
+        export PATH=$PATH:/usr/local/go/bin
+      args:
+        executable: /bin/bash
+
+    - name: Clone Sonic repo
+      git:
+        repo: "{{ sonic_repo }}"
+        dest: "{{ sonic_dir }}"
+        force: yes
+
+    - name: Build sonic
+      shell: |
+        export PATH=$PATH:/usr/local/go/bin && \
+        cd {{ sonic_dir }} && \
+        make all
+      args:
+        executable: /bin/bash
+
+    - name: Ensure {{ sonic_dir }} is owned by the correct user
+      file:
+        path: "{{ sonic_dir }}"
+        state: directory
+        recurse: yes
+        owner: "{{ ansible_user | default('ec2-user') }}"
+        group: "{{ ansible_user | default('ec2-user') }}"
+        mode: '0755'
+
+    - name: Prime Sonic DB with genesis
+      shell: |
+        cd {{ sonic_dir }}
+        ./build/sonictool --datadir={{ data_dir }} genesis json {{ sonic_dir }}/example-genesis.json --experimental
+      args:
+        executable: /bin/bash
+      register: genesis_output
+      failed_when: "'already initialized' not in genesis_output.stderr and genesis_output.rc != 0"
+
+    - name: Debug Sonic genesis stdout
+      debug:
+        msg: "{{ genesis_output.stdout_lines }}"
+
+    - name: Debug Sonic genesis stderr
+      debug:
+        msg: "{{ genesis_output.stderr_lines }}"
+
+    - name: Check if sonicd is already running
+      shell: pgrep -f "{{ sonic_dir }}/build/sonicd"
+      register: sonicd_check
+      ignore_errors: yes
+
+    - name: Start bootnode and capture enode ID
+      shell: >
+        nohup {{ sonic_dir }}/build/sonicd --datadir=/data/sonic/data/sonic \
+        --mode rpc --nat extip:{{ ansible_host }} --http --http.addr=0.0.0.0 \
+        --http.port=8545 --http.api=eth,debug,net,admin,web3,personal,txpool,ftm,dag,sonic \
+        --txpool.globalslots=5000 --txpool.globalqueue=10000 \
+        --txpool.accountslots=64 --txpool.accountqueue=128 > /var/log/sonic.log 2>&1 &
+      when: 
+        - inventory_hostname in groups['bootnode']
+        - sonicd_check.rc != 0
+      args:
+        executable: /bin/bash
+
+    - name: Wait for bootnode to initialize
+      pause:
+        seconds: 10
+      when: inventory_hostname in groups['bootnode']
+
+    - name: Extract enode URL from sonic log
+      shell: "grep -oP 'enode://\\K[^ ]+' /var/log/sonic.log | head -n 1"
+      register: enode_raw
+      when: inventory_hostname in groups['bootnode']
+
+    - name: Set bootnode_enode fact
+      set_fact:
+        bootnode_enode: "enode://{{ enode_raw.stdout }}"
+      when: inventory_hostname in groups['bootnode']
+
+    - name: Set bootnode_enode for all hosts
+      add_host:
+        name: "global_bootnode"
+        groups: bootnode_data
+        bootnode_enode: "{{ hostvars[inventory_hostname]['bootnode_enode'] }}"
+      when: inventory_hostname in groups['bootnode']
+
+- name: Configure validators and remaining RPC nodes
+  hosts: all:!bootnode:!global_bootnode
+  become: yes
+  vars:
+    sonic_dir: "/data/sonic"
+    validator_id: "{{ inventory_hostname.split('-')[-1] }}"
+    validator_data_dir: "/data/v{{ inventory_hostname.split('-')[-1] }}"
+    node_role: "{{ hostvars[inventory_hostname]['tags']['Role'] | default('validator') }}"
+    bootnode_enode: "{{ hostvars['global_bootnode']['bootnode_enode'] }}"
+
+  tasks:
+    - name: Extract validator public key with 0xc0 prefix
+      shell: |
+        pubkey=$(jq -r .pubkey {{ sonic_dir }}/data/v{{ inventory_hostname.split('-')[-1] }}/keystore/validator/* | sed 's/^/0x/')
+        echo "0xc0${pubkey#0x}"
+      register: pubkey_result
+      when: node_role == 'validator'
+
+    - name: Construct ExecStart command
+      set_fact:
+        sonicd_cmd: >-
+          {{ sonic_dir }}/build/sonicd
+          {% if node_role == 'validator' -%}
+          --datadir={{ sonic_dir }}/data/v{{ validator_id }}
+          --validator.id={{ validator_id }}
+          --validator.pubkey={{ pubkey_result.stdout }}
+          --validator.password {{ sonic_dir }}/password
+          --mode=validator
+          {% else -%}
+          --datadir={{ sonic_dir }}/data/sonic
+          --mode=rpc
+          --nat extip:{{ ansible_host }}
+          --http --http.addr=0.0.0.0 --http.port=8545
+          --http.api=eth,debug,net,admin,web3,personal,txpool,ftm,dag,sonic
+          {% endif -%}
+          --bootnodes={{ bootnode_enode }}
+          --txpool.globalslots=5000
+          --txpool.globalqueue=10000
+          --txpool.accountslots=64
+          --txpool.accountqueue=128
+
+    - name: Debug rendered sonicd_cmd
+      debug:
+        var: sonicd_cmd
+
+    - name: Deploy systemd unit file for sonicd
+      template:
+        src: templates/sonicd.service.j2
+        dest: /etc/systemd/system/sonicd.service
+      notify:
+        - Reload systemd
+
+    - name: Enable and start sonicd service
+      systemd:
+        name: sonicd
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: true

@@ -1,0 +1,13 @@
+[Unit]
+Description=Sonic Node Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart={{ sonicd_cmd | replace('\n', ' ') | trim }}
+StandardError=append:/var/log/sonicd.log
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
