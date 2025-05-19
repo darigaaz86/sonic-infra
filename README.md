@@ -25,7 +25,17 @@ terraform init
 terraform apply
 ```
 
-This creates the necessary cloud infrastructure (e.g., EC2 instances).
+This creates the necessary cloud infrastructure (e.g., EC2 instances, Load Balancer).
+
+#### 🔗 View Load Balancer Endpoint
+
+After Terraform finishes, you can get the load balancer DNS using:
+
+```bash
+terraform output rpc_nlb_dns
+```
+
+This displays the Network Load Balancer endpoint for RPC access.
 
 ---
 
@@ -65,7 +75,7 @@ tail -f /var/log/sonic.log
 
 ### ⚙️ Check systemd service
 
-To inspect how the Sonic service is running:
+To inspect how the `sonicd` service is running:
 
 ```bash
 systemctl cat sonicd

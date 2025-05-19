@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=ec2-user
 ExecStart={{ sonicd_cmd | replace('\n', ' ') | trim }}
 StandardError=append:/var/log/sonicd.log
 Restart=on-failure

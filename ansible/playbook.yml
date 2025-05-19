@@ -108,11 +108,17 @@
         mode: '0755'
 
     - name: Prime Sonic DB with genesis
-      shell: |
-        cd {{ sonic_dir }}
-        ./build/sonictool --datadir={{ data_dir }} genesis json {{ sonic_dir }}/example-genesis.json --experimental
+      shell: >
+        ./build/sonictool 
+        --datadir={{ data_dir }} 
+        genesis json {{ sonic_dir }}/example-genesis.json 
+        --mode {{ 'validator' if node_role == 'validator' else 'rpc' }}
+        --experimental
       args:
         executable: /bin/bash
+        chdir: "{{ sonic_dir }}"
+      become: true
+      become_user: ec2-user
       register: genesis_output
       failed_when: "'already initialized' not in genesis_output.stderr and genesis_output.rc != 0"
 
