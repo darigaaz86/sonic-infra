@@ -8,10 +8,8 @@
     sonic_repo: "https://github.com/darigaaz86/sonic-fork-run.git"
     sonic_dir: "/data/sonic"
     go_version: "1.22.3"
-    # node_role: "{{ hostvars[inventory_hostname]['tags']['Role'] | default('validator') }}"
     validator_id: "{{ inventory_hostname.split('-')[-1] }}"
     validator_data_dir: "/data/v{{ inventory_hostname.split('-')[-1] }}"
-    # data_dir: "{{ sonic_dir }}/data/{{ 'v' ~ validator_id if node_role == 'validator' else 'sonic' }}"
 
   tasks:
     - name: Set node_role based on inventory group
