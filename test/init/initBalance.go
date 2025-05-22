@@ -26,7 +26,7 @@ type Account struct {
 }
 
 const (
-	rpcURL        = "http://47.129.166.183:8545"
+	rpcURL        = "http://13.212.159.55:8545"
 	chainID       = 0xfa5 // Replace with actual Sonic chain ID
 	gasLimit      = uint64(21000)
 	GAS_TIP_GWEI  = int64(2) // Tip: 2 Gwei
@@ -152,7 +152,7 @@ func main() {
 					log.Printf("Transferred %d transactions so far\n", count)
 				}
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 		}
 	}(i, sender)
 	}

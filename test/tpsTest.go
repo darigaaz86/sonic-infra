@@ -33,7 +33,7 @@ const (
 	CHAIN_ID         = 0xfa5
 	INTERVAL_MS      = 500
 	BATCH_TX_COUNT   = 500
-	TOTAL_DURATION_MS = 60000
+	TOTAL_DURATION_MS = 6000000
 	GAS_TIP_GWEI      = 1 // dynamic tip
 )
 
