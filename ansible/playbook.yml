@@ -138,8 +138,9 @@
         nohup {{ sonic_dir }}/build/sonicd --datadir=/data/sonic/data/sonic \
         --mode rpc --nat extip:{{ ansible_host }} --http --http.addr=0.0.0.0 \
         --http.port=8545 --http.api=eth,debug,net,admin,web3,personal,txpool,ftm,dag,sonic \
-        --cache 15857 --txpool.globalslots=5000 --txpool.globalqueue=10000 \
-        --txpool.accountslots=64 --txpool.accountqueue=128 > /var/log/sonic.log 2>&1 &
+        --metrics --metrics.addr 0.0.0.0 --metrics.port 6060 \
+        --cache 15857 --txpool.globalslots=100000 --txpool.globalqueue=200000 \
+        --txpool.accountslots=128 --txpool.accountqueue=512 > /var/log/sonic.log 2>&1 &
       when: 
         - inventory_hostname in groups['bootnode']
         - sonicd_check.rc != 0
@@ -205,10 +206,13 @@
           {% endif -%}
           --bootnodes={{ bootnode_enode }}
           --cache 15857
-          --txpool.globalslots=5000
-          --txpool.globalqueue=10000
-          --txpool.accountslots=64
-          --txpool.accountqueue=128
+          --metrics 
+          --metrics.addr 0.0.0.0 
+          --metrics.port 6060
+          --txpool.globalslots=100000
+          --txpool.globalqueue=200000
+          --txpool.accountslots=128
+          --txpool.accountqueue=512
 
     - name: Debug rendered sonicd_cmd
       debug:
