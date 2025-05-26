@@ -12,6 +12,10 @@
     validator_data_dir: "/data/v{{ inventory_hostname.split('-')[-1] }}"
 
   tasks:
+    - name: Calculate 90% of total system memory for GOMEMLIMIT
+      set_fact:
+        gomemlimit: "{{ ((ansible_memtotal_mb * 0.9) | int) }}MiB"
+
     - name: Set node_role based on inventory group
       set_fact:
         node_role: >-
@@ -138,7 +142,7 @@
         nohup {{ sonic_dir }}/build/sonicd --datadir=/data/sonic/data/sonic \
         --mode rpc --nat extip:{{ ansible_host }} --http --http.addr=0.0.0.0 \
         --http.port=8545 --http.api=eth,debug,net,admin,web3,personal,txpool,ftm,dag,sonic \
-        --metrics --metrics.addr 0.0.0.0 --metrics.port 6060 \
+        --metrics --metrics.expensive --metrics.addr 0.0.0.0 --metrics.port 6060 \
         --cache 15857 --txpool.globalslots=100000 --txpool.globalqueue=200000 \
         --txpool.accountslots=128 --txpool.accountqueue=512 > /var/log/sonic.log 2>&1 &
       when: 
@@ -206,8 +210,9 @@
           {% endif -%}
           --bootnodes={{ bootnode_enode }}
           --cache 15857
-          --metrics 
-          --metrics.addr 0.0.0.0 
+          --metrics
+          --metrics.expensive
+          --metrics.addr 0.0.0.0
           --metrics.port 6060
           --txpool.globalslots=100000
           --txpool.globalqueue=200000

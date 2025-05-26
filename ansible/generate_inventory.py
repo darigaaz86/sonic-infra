@@ -12,7 +12,7 @@ output = subprocess.check_output(
 )
 
 ips = json.loads(output)
-validator_count = 10
+validator_count = 15
 
 with open("inventory.ini", "w") as f:
     f.write("[bootnode]\n")

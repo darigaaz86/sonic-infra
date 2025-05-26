@@ -5,7 +5,9 @@ After=network.target
 [Service]
 Type=simple
 User=ec2-user
+Environment=GOMEMLIMIT={{ gomemlimit }}
 ExecStart={{ sonicd_cmd | replace('\n', ' ') | trim }}
+LimitNOFILE=950000
 StandardError=append:/var/log/sonicd.log
 Restart=on-failure
 

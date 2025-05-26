@@ -3,7 +3,7 @@ provider "aws" {
   region  = "ap-southeast-1"
 }
 
-variable "instance_count" { default = 13 }
+variable "instance_count" { default = 18 }
 
 resource "aws_instance" "sonic_node" {
   count           = var.instance_count
@@ -13,8 +13,8 @@ resource "aws_instance" "sonic_node" {
   security_groups = ["default"]
 
   tags = {
-    Name = count.index < 10 ? "validator-${count.index + 1}" : "rpc-${count.index - 9}"
-    Role = count.index < 10 ? "validator" : "rpc"
+    Name = count.index < 15 ? "validator-${count.index + 1}" : "rpc-${count.index - 14}"
+    Role = count.index < 15 ? "validator" : "rpc"
   }
 
   provisioner "local-exec" {
@@ -58,11 +58,11 @@ resource "aws_lb_target_group" "rpc_target_group" {
   }
 }
 
-# Attach only RPC instances (count 10 to 12)
+# Attach only RPC instances (count 16 to 18)
 resource "aws_lb_target_group_attachment" "rpc_targets" {
   count            = 3
   target_group_arn = aws_lb_target_group.rpc_target_group.arn
-  target_id        = aws_instance.sonic_node[count.index + 10].id
+  target_id        = aws_instance.sonic_node[count.index + 15].id
   port             = 8545
 }
 
